@@ -30,9 +30,7 @@ export async function authenticateToken(req, res, next) {
         if (rows.length === 0)
             return res.status(403).send('Invalid token');
 
-        console.log(rows[0].revoked_at);
-
-        if (rows[0].revoked_at !== null)
+        if (rows[0].revoked_at !== undefined)
             return res.status(403).send('Token revoked');
 
         const tokenDate = new Date(rows[0].created_at);
