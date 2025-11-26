@@ -180,6 +180,10 @@ userRouter.route('/score')
         }
     });
 
+userRouter.get('/validate', (req, res) => {
+    res.status(200).send('Token valid');
+});
+
 app.listen(port, () => {
-    console.log(`Server running on http://localhost:${port}`);
+    console.log(`Server running on https://slptr-emilien-fps-apiserver.onrender.com`);
 });
