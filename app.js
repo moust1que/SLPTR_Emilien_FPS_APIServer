@@ -109,14 +109,14 @@ app.post('/user/login', async (req, res) => {
         const conn = await pool.getConnection();
 
         try {
-            const [row] = await conn.execute('SELECT id FROM users WHERE email = ? AND password = ? LIMIT 1', [email, hashedPwd]);
+            const [rows] = await conn.execute('SELECT id FROM users WHERE email = ? AND password = ? LIMIT 1', [email, hashedPwd]);
 
-            if (row.length === 0) {
+            if (rows.length === 0) {
                 conn.release();
                 return res.status(404).send('User not found');
             }
 
-            const userID = row[0].id;
+            const userID = rows[0].id;
 
             const [tokenInTable] = await conn.execute('SELECT id FROM tokens WHERE user_id = ? LIMIT 1', [userID]);
 
@@ -144,12 +144,12 @@ app.post('/user/login', async (req, res) => {
 userRouter.route('/score')
     .get(async (req, res) => {
         try {
-            const [row] = await pool.query('SELECT highscore FROM scores WHERE user_id = ? LIMIT 1', [req.userId]);
+            const [rows] = await pool.query('SELECT highscore FROM scores WHERE user_id = ? LIMIT 1', [req.userId]);
 
-            if (row.length === 0)
+            if (rows.length === 0)
                 return res.status(404).send('No highscore for this user');
 
-            res.status(200).json({ highscore: row[0].highscore });
+            res.status(200).json({ highscore: rows[0].highscore });
         } catch (err) {
             console.error(err);
             res.status(500).send('Database error');
@@ -162,12 +162,12 @@ userRouter.route('/score')
             return res.status(400).send('Invalid highscore');
 
         try {
-            const [row] = await pool.query('SELECT highscore FROM scores WHERE user_id = ? LIMIT 1', [req.userId]);
+            const [rows] = await pool.query('SELECT highscore FROM scores WHERE user_id = ? LIMIT 1', [req.userId]);
 
-            if (row.length === 0) {
+            if (rows.length === 0) {
                 await pool.query('INSERT INTO scores (user_id, highscore) VALUES (?, ?)', [req.userId, highscore]);
             } else {
-                if (row[0].highscore > highscore)
+                if (rows[0].highscore > highscore)
                     return res.status(400).send('Not your best score');
 
                 await pool.query('UPDATE scores SET highscore = ? WHERE user_id = ?', [highscore, req.userId]);

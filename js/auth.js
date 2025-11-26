@@ -25,15 +25,17 @@ export async function authenticateToken(req, res, next) {
     const token = authHeader.split(' ')[1];
 
     try {
-        const [row] = await pool.query('SELECT user_id, created_at FROM tokens WHERE content = ? LIMIT 1', [token]);
+        const [rows] = await pool.query('SELECT user_id, created_at FROM tokens WHERE content = ? LIMIT 1', [token]);
 
-        if (row.length === 0)
+        if (rows.length === 0)
             return res.status(403).send('Invalid token');
 
-        if (row[0].revoked_at !== null)
+        console.log(rows[0].revoked_at);
+
+        if (rows[0].revoked_at !== null)
             return res.status(403).send('Token revoked');
 
-        const tokenDate = new Date(row[0].created_at);
+        const tokenDate = new Date(rows[0].created_at);
         const now = new Date();
 
         const diffTime = Math.abs(now - tokenDate);
@@ -44,7 +46,7 @@ export async function authenticateToken(req, res, next) {
             return res.status(403).send('Token expired');
         }
 
-        req.userId = row[0].user_id;
+        req.userId = rows[0].user_id;
 
         next();
     } catch (err) {
