@@ -39,7 +39,7 @@ export async function authenticateToken(req, res, next) {
         const diffTime = Math.abs(now - tokenDate);
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-        if (diffDays > 3) {
+        if (diffDays > 30) {
             await pool.query('UPDATE tokens SET revoked_at = NOW() WHERE content = ?', [token]);
             return res.status(403).send('Token expired');
         }
