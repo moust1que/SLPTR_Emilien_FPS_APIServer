@@ -25,10 +25,12 @@ export async function authenticateToken(req, res, next) {
     const token = authHeader.split(' ')[1];
 
     try {
-        const [rows] = await pool.query('SELECT user_id, created_at FROM tokens WHERE content = ? LIMIT 1', [token]);
+        const [rows] = await pool.query('SELECT user_id, created_at, revoked_at FROM tokens WHERE content = ? LIMIT 1', [token]);
 
         if (rows.length === 0)
             return res.status(403).send('Invalid token');
+
+        console.log(rows[0].revoked_at);
 
         if (rows[0].revoked_at !== undefined)
             return res.status(403).send('Token revoked');
