@@ -43,10 +43,22 @@ app.post('/user/register', async (req, res) => {
     const hashedPwd = computePassword(pwd);
 
     try {
-        await pool.query('INSERT INTO users (email, password) VALUES (?, ?)', [email, hashedPwd]);
-        res.status(201).send('User created');
+        const conn = await pool.getConnection();
+        try {
+            const [result] = await conn.execute('INSERT INTO users (email, password) VALUES (?, ?)');
+            const newUserID = result.insertId;
+
+            const token = generateTokenForUser(newUserID);
+            await conn.execute('INSERT INTO tokens (user_id, content) VALUES (?, ?)', [newUserID, token]);
+
+            res.status(201).send({ token: token });
+        } catch (err) {
+            if (err.code === 'ER_DUP_ENTRY') return res.status(409).send('User already exists');
+            throw err;
+        } finally {
+            conn.release();
+        }
     } catch (err) {
-        if (err.code === 'ER_DUP_ENTRY') return res.status(409).send('User already exists');
         console.error(err);
         res.status(500).send('Database error');
     }
@@ -96,8 +108,7 @@ app.post('/user/login', async (req, res) => {
 
             res.status(200).send({ token: finalToken });
         } catch (err) {
-            console.error(err);
-            res.status(500).send('Database error');
+            throw err;
         } finally {
             conn.release();
         }
@@ -202,6 +213,8 @@ userRouter.delete('/', async (req, res) => {
                 return res.status(404).send('User not found');
 
             res.send('User deleted');
+        } catch (err) {
+            throw err;
         } finally {
             conn.release();
         }
