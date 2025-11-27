@@ -45,7 +45,7 @@ app.post('/user/register', async (req, res) => {
     try {
         const conn = await pool.getConnection();
         try {
-            const [result] = await conn.execute('INSERT INTO users (email, password) VALUES (?, ?)');
+            const [result] = await conn.execute('INSERT INTO users (email, password) VALUES (?, ?)', [email, hashedPwd]);
             const newUserID = result.insertId;
 
             const token = generateTokenForUser(newUserID);
