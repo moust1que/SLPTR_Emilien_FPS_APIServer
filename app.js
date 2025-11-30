@@ -14,7 +14,9 @@ app.use(json());
 app.use(urlencoded({ extended: true }));
 
 const transporter = nodemailer.createTransport({
-    service: 'gmail',
+    service: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
     auth: {
         type: "OAuth2",
         user: process.env.EMAIL_USER,
@@ -23,6 +25,11 @@ const transporter = nodemailer.createTransport({
         refreshToken: process.env.GMAIL_REFRESH_TOKEN
     }
 });
+
+transporter.verify((error, success) => {
+    if (error) console.log("Error connecting SMTP: ", error);
+    else console.log('SMTP server is ready to send emails!');
+})
 
 const pool = createPool({
     host: process.env.DB_HOST,
