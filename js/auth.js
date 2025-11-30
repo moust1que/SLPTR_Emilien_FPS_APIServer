@@ -30,18 +30,15 @@ export async function authenticateToken(req, res, next) {
         if (rows.length === 0)
             return res.status(403).send('Invalid token');
 
-        if (rows[0].revoked_at !== null)
-            return res.status(403).send('Token revoked');
-
         const tokenDate = new Date(rows[0].created_at);
         const now = new Date();
 
         const diffTime = Math.abs(now - tokenDate);
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-        if (diffDays > 30) {
-            await pool.query('UPDATE tokens SET revoked_at = NOW() WHERE content = ?', [token]);
-            return res.status(403).send('Token expired');
+        if (diffDays > 30 || rows[0].revoked_at !== null) {
+            await pool.query('DELETE FROM tokens WHERE content = ?', [token]);
+            return res.status(403).send('Token revoked');
         }
 
         req.userId = rows[0].user_id;

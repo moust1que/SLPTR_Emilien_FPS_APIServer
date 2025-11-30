@@ -14,7 +14,9 @@ app.use(json());
 app.use(urlencoded({ extended: true }));
 
 const transporter = nodemailer.createTransport({
-    service: 'gmail',
+    service: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
     auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS
@@ -81,30 +83,11 @@ app.post('/user/login', async (req, res) => {
 
             const userID = users[0].id;
 
-            const [tokens] = await conn.execute('SELECT id, content, created_at FROM tokens WHERE user_id = ? LIMIT 1', [userID]);
+            const NewToken = generateTokenForUser(userID);
 
-            let finalToken;
+            await conn.execute('INSERT INTO tokens (user_id, content) VALUES (?, ?)', [userID, NewToken]);
 
-            if (tokens.length > 0) {
-                const dbToken = tokens[0];
-                const tokenDate = new Date(dbToken.created_at);
-                const now = new Date();
-
-                const diffTime = Math.abs(now - tokenDate);
-                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-                if (diffDays <= 30 && dbToken.revoked_at === null) {
-                    await conn.execute('UPDATE tokens SET created_at = NOW() WHERE id = ?', [dbToken.id]);
-                    finalToken = dbToken.content;
-                } else {
-                    await conn.execute('DELETE FROM tokens WHERE id = ?', [dbToken.id]);
-                    finalToken = generateTokenForUser(userID);
-                    await conn.execute('INSERT INTO tokens (user_id, content) VALUES (?, ?)', [userID, finalToken]);
-                }
-            } else {
-                finalToken = generateTokenForUser(userID);
-                await conn.execute('INSERT INTO tokens (user_id, content) VALUES (?, ?)', [userID, finalToken]);
-            }
+            await conn.execute('DELETE FROM tokens WHERE user_id = ? AND created_at < DATE_SUB(NOW(), INTERVAL 30 DAY)', [userID]);
 
             res.status(200).send({ token: finalToken });
         } catch (err) {
@@ -266,6 +249,22 @@ userRouter.route('/score')
             res.status(500).send('Database error');
         }
     });
+
+userRouter.post('/logout', async (req, res) => {
+    const authHeader = req.headers.authorization;
+    const token = authHeader.split(' ')[1];
+
+    if (!token) return res.sendStatus(200);
+
+    try {
+        await pool.query('DELETE FROM tokens WHERE content = ?', [token]);
+
+        res.status(200).send('Logged out successfully');
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Database error');
+    }
+});
 
 app.listen(port, () => {
     console.log(`Server running on https://slptr-emilien-fps-apiserver.onrender.com`);
