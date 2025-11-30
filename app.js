@@ -93,7 +93,7 @@ app.post('/user/login', async (req, res) => {
                 const diffTime = Math.abs(now - tokenDate);
                 const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-                if (diffDays <= 30) {
+                if (diffDays <= 30 && dbToken.revoked_at === null) {
                     await conn.execute('UPDATE tokens SET created_at = NOW() WHERE id = ?', [dbToken.id]);
                     finalToken = dbToken.content;
                 } else {
