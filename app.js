@@ -82,7 +82,7 @@ app.post('/user/login', async (req, res) => {
 
             await conn.execute('DELETE FROM tokens WHERE user_id = ? AND created_at < DATE_SUB(NOW(), INTERVAL 30 DAY)', [userID]);
 
-            res.status(200).send({ token: finalToken });
+            res.status(200).send({ token: NewToken });
         } catch (err) {
             throw err;
         } finally {
