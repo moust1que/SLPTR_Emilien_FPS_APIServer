@@ -14,9 +14,7 @@ app.use(json());
 app.use(urlencoded({ extended: true }));
 
 const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true,
+    service: 'gmail',
     auth: {
         type: "OAuth2",
         user: process.env.EMAIL_USER,
