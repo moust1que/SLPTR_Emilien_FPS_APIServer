@@ -2,8 +2,8 @@ import express, { json, urlencoded } from 'express';
 import { createPool } from 'mysql2/promise';
 import { validateEmail, validatePassword, computePassword, generateTokenForUser } from './js/Utils.js';
 import { authenticateToken } from './js/auth.js';
-import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
+import { Resend } from 'resend';
 
 dotenv.config();
 
@@ -13,21 +13,7 @@ const port = process.env.PORT || 3000;
 app.use(json());
 app.use(urlencoded({ extended: true }));
 
-const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-        type: "OAuth2",
-        user: process.env.EMAIL_USER,
-        clientId: process.env.GMAIL_CLIENT_ID,
-        clientSecret: process.env.GMAIL_CLIENT_SECRET,
-        refreshToken: process.env.GMAIL_REFRESH_TOKEN
-    }
-});
-
-transporter.verify((error, success) => {
-    if (error) console.log("Error connecting SMTP: ", error);
-    else console.log('SMTP server is ready to send emails!');
-})
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 const pool = createPool({
     host: process.env.DB_HOST,
@@ -124,14 +110,18 @@ app.post('/user/forgot-password', async (req, res) => {
         await pool.query('DELETE FROM password_resets WHERE user_id = ?', [userID]);
         await pool.query('INSERT INTO password_resets (user_id, code, expires_at) VALUES (?, ?, ?)', [userID, code, expiresAt]);
 
-        const mailOptions = {
-            from: process.env.MAIL_USER,
+        const { data, error } = await resend.emails.send({
+            from: 'onboarding@resend.dev',
             to: email,
             subject: 'Password reset code',
-            text: `Your password reset code is: ${code}. It will expire in 15 minutes.`
-        };
+            html: `Your password reset code is: ${code}. It will expire in 15 minutes.`
+        });
 
-        await transporter.sendMail(mailOptions);
+        if (error) {
+            console.error("Erreur Resend:", error);
+            return res.status(500).send('Error sending email');
+        }
+
         res.status(200).send('Password reset code sent');
     } catch (err) {
         console.error(err);
