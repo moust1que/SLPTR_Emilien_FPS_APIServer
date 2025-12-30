@@ -10,12 +10,15 @@ dotenv.config();
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Configure Express to parse incoming JSON and URL-encoded data
 app.use(json());
 app.use(urlencoded({ extended: true }));
 
+// Initialize the Brevo client with the API key for sending emails
 const apiInstance = new brevo.TransactionalEmailsApi();
 apiInstance.setApiKey(brevo.TransactionalEmailsApiApiKeys.apiKey, process.env.BREVO_API_KEY);
 
+// Create a database connection pool with SSL security settings
 const pool = createPool({
     host: process.env.DB_HOST,
     user: process.env.DB_USER,
@@ -28,10 +31,13 @@ const pool = createPool({
     }
 });
 
-// public routes
+// --- PUBLIC ROUTES ---
+
+// Route to create a new user account
 app.post('/user/register', async (req, res) => {
     const { email, pwd } = req.body;
 
+    // Validate email format and password strength before proceeding
     if (!validateEmail(email)) return res.status(400).send('Invalid email format');
     if (!validatePassword(pwd)) return res.status(400).send('Weak password');
 
@@ -40,6 +46,7 @@ app.post('/user/register', async (req, res) => {
     try {
         const conn = await pool.getConnection();
         try {
+            // Insert the new user and generate their first session token
             const [result] = await conn.execute('INSERT INTO users (email, password) VALUES (?, ?)', [email, hashedPwd]);
             const newUserID = result.insertId;
 
@@ -48,6 +55,7 @@ app.post('/user/register', async (req, res) => {
 
             res.status(201).send({ token: token });
         } catch (err) {
+            // Handle specific database errors like duplicate email addresses
             if (err.code === 'ER_DUP_ENTRY') return res.status(409).send('User already exists');
             throw err;
         } finally {
@@ -59,6 +67,7 @@ app.post('/user/register', async (req, res) => {
     }
 });
 
+// Route to authenticate a user and create a session
 app.post('/user/login', async (req, res) => {
     const { email, pwd } = req.body;
     const hashedPwd = computePassword(pwd);
@@ -67,6 +76,7 @@ app.post('/user/login', async (req, res) => {
         const conn = await pool.getConnection();
 
         try {
+            // Verify if the user exists with the provided credentials
             const [users] = await conn.execute('SELECT id FROM users WHERE email = ? AND password = ? LIMIT 1', [email, hashedPwd]);
 
             if (users.length === 0) {
@@ -76,10 +86,11 @@ app.post('/user/login', async (req, res) => {
 
             const userID = users[0].id;
 
+            // Create a new token for this specific device/session
             const NewToken = generateTokenForUser(userID);
-
             await conn.execute('INSERT INTO tokens (user_id, content) VALUES (?, ?)', [userID, NewToken]);
 
+            // Clean up old tokens for this user that have expired (older than 30 days)
             await conn.execute('DELETE FROM tokens WHERE user_id = ? AND created_at < DATE_SUB(NOW(), INTERVAL 30 DAY)', [userID]);
 
             res.status(200).send({ token: NewToken });
@@ -94,6 +105,7 @@ app.post('/user/login', async (req, res) => {
     }
 });
 
+// Route to initiate the password reset process via email
 app.post('/user/forgot-password', async (req, res) => {
     const { email } = req.body;
 
@@ -106,6 +118,7 @@ app.post('/user/forgot-password', async (req, res) => {
 
         const userID = users[0].id;
 
+        // Check for existing requests to enforce a 60-second cooldown (Anti-Spam)
         const [existingRequest] = await pool.query('SELECT expires_at FROM password_resets WHERE user_id = ? LIMIT 1', [userID]);
 
         if (existingRequest.length > 0) {
@@ -121,18 +134,17 @@ app.post('/user/forgot-password', async (req, res) => {
             }
         }
 
+        // Generate a 6-digit code and save it to the database with a 15-minute expiration
         const code = Math.floor(100000 + Math.random() * 900000).toString();
         const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
 
         await pool.query('DELETE FROM password_resets WHERE user_id = ?', [userID]);
         await pool.query('INSERT INTO password_resets (user_id, code, expires_at) VALUES (?, ?, ?)', [userID, code, expiresAt]);
 
+        // Configure and send the email using Brevo with the HTML template
         const sendSmtpEmail = new brevo.SendSmtpEmail();
-
         sendSmtpEmail.sender = { "name": "Test Unit", "email": process.env.SENDER_EMAIL };
-
         sendSmtpEmail.to = [{ "email": email }];
-
         sendSmtpEmail.subject = "Reset your password";
         sendSmtpEmail.htmlContent = `
         <!DOCTYPE html>
@@ -188,12 +200,14 @@ app.post('/user/forgot-password', async (req, res) => {
     }
 });
 
+// Route to change the password using the verification code
 app.post('/user/reset-password', async (req, res) => {
     const { email, code, newPwd } = req.body;
 
     if (!validatePassword(newPwd)) return res.status(400).send('Weak password');
 
     try {
+        // Verify that the code is correct, matches the email, and has not expired
         const [rows] = await pool.query(
             `SELECT r.user_id
             FROM password_resets r
@@ -207,6 +221,7 @@ app.post('/user/reset-password', async (req, res) => {
         const userID = rows[0].user_id;
         const hashedPwd = computePassword(newPwd);
 
+        // Update the password in the database and delete the used verification code
         await pool.query('UPDATE users SET password = ?, updated_at = NOW() WHERE id = ?', [hashedPwd, userID]);
         await pool.query('DELETE FROM password_resets WHERE user_id = ?', [userID]);
 
@@ -217,27 +232,31 @@ app.post('/user/reset-password', async (req, res) => {
     }
 });
 
-// private routes
+// --- PRIVATE ROUTES ---
+
 const userRouter = express.Router();
+// Apply the authentication middleware to protect all routes defined on this router
 userRouter.use(authenticateToken);
 app.use('/user', userRouter);
 
+// Route to allow a logged-in user to change their password
 userRouter.put('/', async (req, res) => {
     const { newPwd } = req.body;
 
-        if (!validatePassword(newPwd)) return res.status(400).send('Weak password');
+    if (!validatePassword(newPwd)) return res.status(400).send('Weak password');
 
-        const hashedPwd = computePassword(newPwd);
+    const hashedPwd = computePassword(newPwd);
 
-        try {
-            await pool.query('UPDATE users SET password = ?, updated_at = NOW() WHERE id = ?', [hashedPwd, req.userId]);
-            res.status(200).send('Password updated');
-        } catch (err) {
-            console.error(err);
-            res.status(500).send('Database error');
-        }
-    });
+    try {
+        await pool.query('UPDATE users SET password = ?, updated_at = NOW() WHERE id = ?', [hashedPwd, req.userId]);
+        res.status(200).send('Password updated');
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Database error');
+    }
+});
 
+// Route to permanently delete the user's account and associated data
 userRouter.delete('/', async (req, res) => {
     try {
         const conn = await pool.getConnection();
@@ -262,49 +281,12 @@ userRouter.delete('/', async (req, res) => {
     }
 });
 
+// Simple endpoint to check if the current token is still valid
 userRouter.get('/validate', (req, res) => {
     res.status(200).send('Token valid');
 });
 
-userRouter.route('/score')
-    .get(async (req, res) => {
-        try {
-            const [rows] = await pool.query('SELECT highscore FROM scores WHERE user_id = ? LIMIT 1', [req.userId]);
-
-            if (rows.length === 0)
-                return res.status(404).send('No highscore for this user');
-
-            res.status(200).json({ highscore: rows[0].highscore });
-        } catch (err) {
-            console.error(err);
-            res.status(500).send('Database error');
-        }
-    })
-    .post(async (req, res) => {
-        const { highscore } = req.body;
-
-        if (typeof highscore !== 'number' || highscore < 0)
-            return res.status(400).send('Invalid highscore');
-
-        try {
-            const [rows] = await pool.query('SELECT highscore FROM scores WHERE user_id = ? LIMIT 1', [req.userId]);
-
-            if (rows.length === 0) {
-                await pool.query('INSERT INTO scores (user_id, highscore) VALUES (?, ?)', [req.userId, highscore]);
-            } else {
-                if (rows[0].highscore > highscore)
-                    return res.status(400).send('Not your best score');
-
-                await pool.query('UPDATE scores SET highscore = ? WHERE user_id = ?', [highscore, req.userId]);
-            }
-
-            res.status(201).send('Highscore updated');
-        } catch (err) {
-            console.error(err);
-            res.status(500).send('Database error');
-        }
-    });
-
+// Route to log out by deleting the current session token
 userRouter.post('/logout', async (req, res) => {
     const authHeader = req.headers.authorization;
     const token = authHeader.split(' ')[1];
@@ -321,6 +303,7 @@ userRouter.post('/logout', async (req, res) => {
     }
 });
 
+// Start the server on the specified port
 app.listen(port, () => {
     console.log(`Server running on https://slptr-emilien-fps-apiserver.onrender.com`);
 });
