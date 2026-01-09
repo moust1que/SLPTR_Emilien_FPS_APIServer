@@ -33,6 +33,15 @@ const pool = createPool({
 
 // --- PUBLIC ROUTES ---
 
+// Route to check if the server is awake
+app.get('/', async (req, res) => {
+    try {
+        res.status(200).send('Server is awake and DB is ready');
+    } catch (err) {
+        res.status(500).send('Server booting...');
+    }
+});
+
 // Route to create a new user account
 app.post('/user/register', async (req, res) => {
     const { email, pwd } = req.body;
